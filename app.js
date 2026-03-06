@@ -1,11 +1,4 @@
 // ----------------------------
-// Firebase Module importieren
-// ----------------------------
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, push, onChildAdded } 
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-
-// ----------------------------
 // Firebase Config einfügen
 // ----------------------------
 const firebaseConfig = {
@@ -16,8 +9,8 @@ const firebaseConfig = {
 };
 
 // Firebase initialisieren
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
 // ----------------------------
 // Schach-Logik initialisieren
@@ -42,7 +35,7 @@ let myColor = "white";  // Standardfarbe
 // ----------------------------
 // Spiel beitreten / erstellen
 // ----------------------------
-window.joinGame = function() {
+function joinGame() {
   let input = document.getElementById("gameId").value;
 
   if(!input) {
@@ -77,7 +70,7 @@ function onDrop(source, target) {
   if(move === null) return 'snapback'; // illegaler Zug
 
   // Nur eigene Züge senden
-  push(ref(db, "games/" + currentGame + "/moves"), {
+  db.ref("games/" + currentGame + "/moves").push({
     from: source,
     to: target,
     color: myColor
@@ -90,9 +83,9 @@ function onDrop(source, target) {
 // Züge vom Server empfangen
 // ----------------------------
 function listenMoves() {
-  const movesRef = ref(db, "games/" + currentGame + "/moves");
+  const movesRef = db.ref("games/" + currentGame + "/moves");
 
-  onChildAdded(movesRef, (data) => {
+  movesRef.on('child_added', (data) => {
     const move = data.val();
 
     // Nur Züge des anderen Spielers ausführen
