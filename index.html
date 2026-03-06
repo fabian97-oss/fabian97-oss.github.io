@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Online Schach</title>
-  <link rel="stylesheet" href="https://unpkg.com/chessground@7.0.0/dist/chessground.min.css" />
   <style>
     body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:30px auto;padding:10px;text-align:center}
     h1{margin-bottom:6px}
@@ -17,6 +16,8 @@
     #status{margin-top:8px;font-weight:600}
     #vs{margin-top:10px;font-weight:700}
     #lobby,#game{display:none}
+    .note{font-size:13px;color:#666;margin-top:8px}
+    .error{color:#b00020;font-weight:700;margin-top:10px}
   </style>
 </head>
 <body>
@@ -31,7 +32,8 @@
     <div class="row" style="margin-top:8px">
       <input id="playerName" type="text" placeholder="Dein Name (z. B. Anna)" />
     </div>
-    <div id="lobbyInfo" style="margin-top:8px;color:#444">Gib Spiel-Code und deinen Namen ein.</div>
+    <div id="lobbyInfo" class="note">Gib Spiel-Code und deinen Namen ein. Wenn Ressourcen von CDNs blockiert werden, erlauben/whitelisten (Tracking Protection) oder probiere anderes Netzwerk.</div>
+    <div id="libError" class="error" style="display:none;"></div>
   </div>
 
   <!-- GAME: Spielerstatus, Board und Controls -->
@@ -46,15 +48,113 @@
     </div>
   </div>
 
-  <!-- Abhängigkeiten -->
-  <script src="https://unpkg.com/chessground@7.0.0/dist/chessground.min.js"></script>
-  <!-- chess.js (Browser-Bundle) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js"></script>
-  <!-- Firebase compat -->
+  <!-- Firebase compat (leave as-is, still required) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
   <script>
+  // ---------- Robust loader for external libs (tries multiple CDNs) ----------
+  const CSS_CANDIDATES = [
+    'https://cdn.jsdelivr.net/npm/chessground@7.0.0/dist/chessground.min.css',
+    'https://unpkg.com/chessground@7.0.0/dist/chessground.min.css'
+  ];
+  const JS_CANDIDATES = {
+    chessground: [
+      'https://cdn.jsdelivr.net/npm/chessground@7.0.0/dist/chessground.min.js',
+      'https://unpkg.com/chessground@7.0.0/dist/chessground.min.js'
+    ],
+    chessjs: [
+      'https://cdn.jsdelivr.net/npm/chess.js@1.0.0/chess.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js',
+      'https://unpkg.com/chess.js@1.0.0/chess.min.js'
+    ]
+  };
+
+  function loadCssSequential(urls) {
+    return new Promise((resolve) => {
+      let idx = 0;
+      function tryNext() {
+        if (idx >= urls.length) { resolve(false); return; }
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = urls[idx++];
+        link.onload = () => resolve(true);
+        link.onerror = () => {
+          // try next URL
+          tryNext();
+        };
+        document.head.appendChild(link);
+      }
+      tryNext();
+    });
+  }
+
+  function loadScriptSequential(urls, testGlobalName, timeoutMs = 8000) {
+    return new Promise((resolve, reject) => {
+      let idx = 0;
+      let timedOut = false;
+      function tryNext() {
+        if (timedOut) return;
+        if (typeof window[testGlobalName] !== 'undefined') { resolve(true); return; }
+        if (idx >= urls.length) { resolve(false); return; }
+        const url = urls[idx++];
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = false;
+        let done = false;
+        s.onload = () => {
+          // small delay to allow global to be set
+          setTimeout(() => {
+            if (typeof window[testGlobalName] !== 'undefined') {
+              done = true;
+              resolve(true);
+            } else {
+              // maybe this CDN didn't provide the expected global
+              if (!done) tryNext();
+            }
+          }, 50);
+        };
+        s.onerror = () => {
+          if (!done) tryNext();
+        };
+        document.head.appendChild(s);
+
+        // safety timeout for this attempt
+        setTimeout(() => {
+          if (typeof window[testGlobalName] !== 'undefined') { resolve(true); return; }
+          // proceed to next candidate
+          tryNext();
+        }, timeoutMs);
+      }
+      tryNext();
+    });
+  }
+
+  async function ensureLibraries() {
+    // try CSS first (non-blocking)
+    await loadCssSequential(CSS_CANDIDATES);
+
+    // then try JS libs
+    const chessgroundLoaded = await loadScriptSequential(JS_CANDIDATES.chessground, 'Chessground');
+    const chessjsLoaded = await loadScriptSequential(JS_CANDIDATES.chessjs, 'Chess');
+
+    return { chessgroundLoaded, chessjsLoaded };
+  }
+
+  // ---------- App code ----------
+  document.addEventListener('DOMContentLoaded', async () => {
+    const libStatus = document.getElementById('libError');
+    const { chessgroundLoaded, chessjsLoaded } = await ensureLibraries();
+
+    if (!chessgroundLoaded || !chessjsLoaded) {
+      libStatus.style.display = 'block';
+      libStatus.innerText = 'Fehler: Externe Bibliotheken konnten nicht geladen werden. Bitte Tracking-Protection/Adblocker für die Domain deaktivieren oder CDN-Hosts (jsdelivr, unpkg, cdnjs) erlauben.';
+      // allow user to still try to continue, but disable join button
+      document.getElementById('joinBtn').disabled = true;
+      return;
+    }
+
+    // now safe to run the app
     // -----------------------
     // Firebase-Konfiguration: hier eigene Werte eintragen
     // -----------------------
@@ -65,7 +165,6 @@
         projectId: "schach-online-25607"
     };
 
-    // -----------------------
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
@@ -90,11 +189,11 @@
     let cg = null;      // chessground instance
     let chess = null;   // chess.js instance
     let listenersAttached = false;
-    
-    // Zeige Lobby
+
+    // Show lobby
     lobbyEl.style.display = 'block';
 
-    // Hilfsfunktion: UI aktualisieren
+    // UI update
     function updateGameUI(players, fen) {
       const p1 = players && players.player1 ? players.player1.name : null;
       const p2 = players && players.player2 ? players.player2.name : null;
@@ -109,9 +208,7 @@
         statusEl.innerText = `${count}/2`;
       }
 
-      // falls fen gegeben und cg vorhanden: lade position
-      if (fen && cg) {
-        // update local chess and board only if fen differs
+      if (fen && cg && chess) {
         if (chess.fen() !== fen) {
           chess.load(fen);
           cg.set({fen: fen});
@@ -119,26 +216,22 @@
       }
     }
 
-    // Listener anhängen
+    // attach listeners
     function attachListeners() {
       if (!gameRef || listenersAttached) return;
       listenersAttached = true;
 
-      // Spielerliste
       playersRef.on('value', snap => {
         const players = snap.val() || {};
-        // falls players existieren, update UI
         gameRef.child('fen').once('value').then(s => {
           const fen = s.val() || null;
           updateGameUI(players, fen);
         });
       });
 
-      // Spielzustand (FEN) — remote moves empfangen
       gameRef.child('fen').on('value', snap => {
         const fen = snap.val();
-        if (!fen) return;
-        // lade nur wenn sich FEN unterscheidet (vermeidet echo)
+        if (!fen || !chess) return;
         if (chess.fen() !== fen) {
           chess.load(fen);
           cg.set({fen: fen});
@@ -146,25 +239,26 @@
       });
     }
 
-    // Initialisiere Chess & Chessground
+    // init local board
     function initLocalBoard(initialFen) {
       chess = new Chess();
       if (initialFen) chess.load(initialFen);
 
-      // chessground setup
+      // Destroy previous instance if exists
+      if (cg && typeof cg.destroy === 'function') cg.destroy();
+      else if (cg && typeof cg.stop === 'function') cg.stop();
       cg = Chessground(boardEl, {
         fen: chess.fen(),
         orientation: myColor || 'white',
         movable: {
           color: myColor || 'white',
           free: false,
-          // after wird aufgerufen nachdem UI versucht hat zu ziehen
           events: {
             after: (orig, dest) => {
-              // nur erlauben, wenn es wirklich der Zug des Spielers ist
+              if (!chess) return;
               const turn = chess.turn() === 'w' ? 'white' : 'black';
               if (turn !== myColor) {
-                // nicht dran — revert (server bringt die richtige Stellung)
+                // not our turn -> reload server state
                 gameRef.child('fen').once('value').then(s => {
                   const fen = s.val();
                   if (fen) {
@@ -175,17 +269,25 @@
                 return;
               }
 
-              // versuche Zug in chess.js
               const move = chess.move({from: orig, to: dest, promotion: 'q'});
               if (!move) {
-                // ungültig -> lade letzte Stellung neu
+                // invalid -> reload
                 cg.set({fen: chess.fen()});
                 return;
               }
 
-              // gültig: schreibe neue FEN in DB (dies löst remote update beim anderen Client aus)
               const newFen = chess.fen();
-              gameRef.child('fen').set(newFen);
+              gameRef.child('fen').set(newFen).catch(err => {
+                // revert on error by reloading server fen
+                console.error('DB write failed', err);
+                gameRef.child('fen').once('value').then(s => {
+                  const fen = s.val();
+                  if (fen) {
+                    chess.load(fen);
+                    cg.set({fen: fen});
+                  }
+                });
+              });
             }
           }
         },
@@ -193,7 +295,7 @@
       });
     }
 
-    // Beitreten
+    // join logic
     joinBtn.addEventListener('click', () => {
       const gameId = String(gameCodeInput.value||'').trim();
       const name = String(playerNameInput.value||'').trim() || 'Spieler';
@@ -204,7 +306,6 @@
       playersRef = db.ref('games/' + currentGameId + '/players');
       gameRef = db.ref('games/' + currentGameId);
 
-      // Transaction um Slot zu belegen bzw. Namen zu aktualisieren
       playersRef.transaction(current => {
         if (current === null) {
           return { player1: { id: myId, name: name } };
@@ -220,8 +321,7 @@
           } else if (current.player2 && current.player2.id === myId) {
             current.player2.name = name; return current;
           } else {
-            // beide belegt
-            return;
+            return; // both occupied
           }
         }
       }, (err, committed, snapshot) => {
@@ -235,31 +335,33 @@
 
         myColor = mySlot === 'player1' ? 'white' : 'black';
 
-        // setze onDisconnect für eigenen Slot
+        // onDisconnect cleanup
         playersRef.child(mySlot).onDisconnect().remove();
 
-        // Falls kein fen vorhanden -> initialisiere mit Startstellung
+        // Ensure fen exists (transactionally)
         gameRef.child('fen').transaction(f => {
           if (!f) {
             const tempChess = new Chess();
             return tempChess.fen();
           }
-          return f; // keine Änderung
+          return f;
         }).then(() => {
-          // UI wechseln
+          // switch UI
           lobbyEl.style.display = 'none';
           gameEl.style.display = 'block';
 
-          // initialisiere Board lokal (liest fen aus DB kurz danach im listener)
+          // initialize local board (will be kept in sync by listeners)
           initLocalBoard();
 
-          // listener anhängen
           attachListeners();
+        }).catch(e => {
+          console.error(e);
+          alert('Fehler beim Initialisieren des Spiels.');
         });
       });
     });
 
-    // Verlassen
+    // leave
     leaveBtn.addEventListener('click', () => {
       if (playersRef && mySlot) {
         playersRef.child(mySlot).remove().then(() => resetLocalState());
@@ -271,7 +373,11 @@
       if (gameRef) gameRef.child('fen').off();
       listenersAttached = false;
       myId = null; mySlot = null; myColor = null; currentGameId = null; playersRef = null; gameRef = null;
-      if (cg) { cg.stop(); cg = null; }
+      if (cg) {
+        if (typeof cg.destroy === 'function') cg.destroy();
+        else if (typeof cg.stop === 'function') cg.stop();
+        cg = null;
+      }
       chess = null;
       gameEl.style.display = 'none';
       lobbyEl.style.display = 'block';
@@ -280,8 +386,8 @@
       gameCodeInput.value = '';
     }
 
-    // Hinweis: Firebase DB Sicherheitsregeln müssen während Entwicklung offen sein (oder korrekt konfiguriert)
-    // sonst schlagen Lese/Schreib-Operationen fehl.
+    // End of app
+  }); // DOMContentLoaded
   </script>
 </body>
 </html>
