@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Online Schach Multiplayer</title>
+<title>Test Multiplayer Schach</title>
 
 <!-- Chessground CSS -->
 <link rel="stylesheet" href="https://unpkg.com/chessground@7.0.0/dist/chessground.min.css">
@@ -10,38 +10,30 @@
 <style>
 body { font-family: Arial, sans-serif; text-align: center; margin-top: 30px; }
 #board { width: 400px; height: 400px; margin: 20px auto; }
-input { padding: 5px; font-size: 14px; width: 120px; }
+input { padding: 5px; font-size: 14px; width: 150px; }
 button { padding: 5px 10px; font-size: 14px; margin-left: 5px; }
+#status { margin-top: 20px; font-weight: bold; color: green; }
 </style>
 </head>
 <body>
 
-<h1>Online Schach Multiplayer</h1>
+<h1>Test Multiplayer Schach</h1>
 
 <div id="board"></div>
 
 <div>
-  <input id="gameId" placeholder="Spiel ID (optional)">
+  <input id="gameId" placeholder="Spiel ID eingeben">
   <button onclick="joinGame()">Spiel beitreten</button>
 </div>
 
-<!-- Bibliotheken -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js"></script>
-<script src="https://unpkg.com/chessground@7.0.0/dist/chessground.min.js"></script>
+<div id="status"></div>
 
-<!-- Firebase v9 compat (funktioniert global) -->
+<!-- Bibliotheken -->
+<script src="https://unpkg.com/chessground@7.0.0/dist/chessground.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
 <script>
-// ----------------------------
-// Globale Variablen
-// ----------------------------
-let board;
-let currentGame = "";
-let myColor = "white";
-const game = new Chess();
-
 // ----------------------------
 // Firebase Config einfügen
 // ----------------------------
@@ -52,74 +44,51 @@ const firebaseConfig = {
   projectId: "schach-online-25607"
 };
 
-// Firebase initialisieren
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+
+// ----------------------------
+// Globale Variablen
+// ----------------------------
+let board;
+let currentGame = "";
 
 // ----------------------------
 // Chessground Brett initialisieren
 // ----------------------------
 board = Chessground(document.getElementById("board"), {
-  draggable: true,
-  orientation: 'white',
-  highlight: true,
-  turnColor: 'white',
-  movable: {
-    free: false,
-    color: 'white',
-    showDests: true,
-    events: { after: onMove }
-  }
+  draggable: false,
+  orientation: 'white'
 });
 
 // ----------------------------
 // Spiel beitreten / erstellen
 // ----------------------------
 function joinGame() {
-  let input = document.getElementById("gameId").value;
-  if(!input) input = Math.random().toString(36).substring(2,8);
+  let input = document.getElementById("gameId").value.trim();
+  if(!input) {
+    alert("Bitte eine Spiel-ID eingeben!");
+    return;
+  }
   currentGame = input;
 
-  // Spielerfarbe zufällig zuweisen
-  myColor = Math.random() > 0.5 ? "white" : "black";
-  board.setOrientation(myColor);
-  board.state.movable.color = myColor;
+  const playersRef = db.ref("games/" + currentGame + "/players");
+  const myId = Math.random().toString(36).substring(2,8);
 
-  // Moves vom Server hören
-  listenMoves();
+  // Eigenen Spieler registrieren
+  playersRef.child(myId).set(true);
 
-  alert(`Du spielst ${myColor}. Spiel-ID: ${currentGame}`);
-}
+  // Wenn Spieler die Seite verlassen, entfernen
+  playersRef.child(myId).onDisconnect().remove();
 
-// ----------------------------
-// Eigene Züge ausführen und senden
-// ----------------------------
-function onMove(from, to) {
-  const move = game.move({from, to, promotion: 'q'});
-  if(!move) return false;
-
-  db.ref("games/" + currentGame + "/moves").push({
-    from: from,
-    to: to,
-    color: myColor
-  });
-
-  return true;
-}
-
-// ----------------------------
-// Züge vom Server empfangen
-// ----------------------------
-function listenMoves() {
-  const movesRef = db.ref("games/" + currentGame + "/moves");
-  movesRef.on('child_added', (data) => {
-    const move = data.val();
-    if(move.color !== myColor) {
-      const legalMove = game.move({from: move.from, to: move.to, promotion: 'q'});
-      if(legalMove) board.move(legalMove.from + '-' + legalMove.to);
-
-      if(game.isCheckmate()) alert("Schachmatt!");
-      if(game.isDraw()) alert("Unentschieden!");
+  // Auf Veränderungen hören
+  playersRef.on('value', snapshot => {
+    const count = snapshot.numChildren();
+    if(count >= 2) {
+      document.getElementById("status").innerText = "Beide Spieler bereit!";
+    } else {
+      document.getElementById("status").innerText = "Warte auf zweiten Spieler...";
     }
   });
 }
