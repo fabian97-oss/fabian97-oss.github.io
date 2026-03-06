@@ -8,6 +8,7 @@ const firebaseConfig = {
   projectId: "schach-online-25607"
 };
 
+
 // Firebase initialisieren
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
