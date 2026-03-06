@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Online Schach</title>
+
+<link rel="stylesheet"
+href="https://unpkg.com/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+
+<style>
+#board{
+width:400px;
+margin:auto;
+}
+</style>
+
+</head>
+
+<body>
+
+<h1>Online Schach</h1>
+
+<div id="board"></div>
+
+<input id="gameId" placeholder="spiel123">
+<button onclick="joinGame()">Spiel beitreten</button>
+
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+
+<script src="https://unpkg.com/chess.js"></script>
+
+<script src="https://unpkg.com/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+
+<script type="module" src="app.js"></script>
+
+</body>
+</html>
