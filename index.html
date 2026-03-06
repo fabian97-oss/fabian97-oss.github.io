@@ -4,56 +4,84 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Online Schach</title>
+
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:30px auto;padding:10px;text-align:center}
-    h1{margin-bottom:6px}
+    body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:24px auto;padding:12px;text-align:center}
+    h1{margin-bottom:8px}
     .card{border:1px solid #ddd;padding:18px;border-radius:8px;margin:12px auto}
     .row{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
-    input[type=text]{padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;width:220px}
+    input[type=text]{padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;width:240px}
     button{padding:9px 14px;border-radius:6px;border:0;background:#0b67ff;color:#fff;cursor:pointer}
     button.secondary{background:#6c757d}
-    #board{width:480px;height:480px;margin:16px auto}
-    #status{margin-top:8px;font-weight:600}
-    #vs{margin-top:10px;font-weight:700}
-    #lobby,#game{display:none}
+    #board{width:560px;height:560px;margin:16px auto}
     .note{font-size:13px;color:#666;margin-top:8px}
     .error{color:#b00020;font-weight:700;margin-top:10px}
+    .hidden{display:none}
+    #countdownBox{margin-top:10px;font-weight:700}
+    #page1,#page2,#page3{display:none}
+    #statusText{margin-top:8px;font-weight:600}
+    #vs{margin-top:10px;font-weight:700}
   </style>
 </head>
 <body>
   <h1>Online Schach</h1>
 
-  <!-- LOBBY: Code + Name + Beitreten -->
-  <div id="lobby" class="card">
+  <!-- PAGE 1: Startseite -->
+  <div id="page1" class="card">
     <div class="row">
-      <input id="gameCode" type="text" placeholder="Spiel-Code eingeben" />
-      <button id="joinBtn">Spiel betreten</button>
+      <input id="gameCodeStart" type="text" placeholder="Spiel-Code eingeben (z. B. abc123)" />
+      <button id="goLobbyBtn">Spiel beitreten</button>
     </div>
-    <div class="row" style="margin-top:8px">
-      <input id="playerName" type="text" placeholder="Dein Name (z. B. Anna)" />
+    <div class="row" style="margin-top:10px">
+      <input id="playerNameStart" type="text" placeholder="Dein Name (z. B. Anna)" />
     </div>
-    <div id="lobbyInfo" class="note">Gib Spiel-Code und deinen Namen ein. Wenn Ressourcen von CDNs blockiert werden, erlauben/whitelisten (Tracking Protection) oder probiere anderes Netzwerk.</div>
-    <div id="libError" class="error" style="display:none;"></div>
+    <div class="note">Gib Spiel-Code und Namen ein. Klick "Spiel beitreten" um zur Lobby (Seite 2) weitergeleitet zu werden.</div>
+    <div id="libError1" class="error hidden"></div>
   </div>
 
-  <!-- GAME: Spielerstatus, Board und Controls -->
-  <div id="game" class="card">
-    <div id="status">Warte...</div>
+  <!-- PAGE 2: Lobby / Vorbereitung -->
+  <div id="page2" class="card">
+    <div id="statusText">Warte auf Spieler...</div>
     <div id="vs">- vs -</div>
 
-    <div id="board"></div>
-
-    <div style="margin-top:8px">
-      <button id="leaveBtn" class="secondary">Spiel verlassen</button>
+    <div style="margin-top:12px">
+      <button id="leaveLobbyBtn" class="secondary">Lobby verlassen</button>
     </div>
+
+    <div style="margin-top:14px">
+      <button id="startBtn">Spiel starten</button>
+      <div id="startCount" style="margin-top:8px">0/2 Spieler auf Start</div>
+    </div>
+
+    <div id="countdownBox" class="hidden">
+      Countdown: <span id="countdownNumber">3</span>s
+      <div style="margin-top:8px">
+        <button id="abortStartBtn" class="secondary">Abbrechen</button>
+      </div>
+    </div>
+
+    <div id="lobbyNote" class="note" style="margin-top:12px">Wenn beide auf "Spiel starten" klicken beginnt ein 3s-Countdown — jeder kann abbrechen.</div>
+    <div id="libError2" class="error hidden"></div>
   </div>
 
-  <!-- Firebase compat (leave as-is, still required) -->
+  <!-- PAGE 3: Spiel (Brett) -->
+  <div id="page3" class="card">
+    <div id="gameStatus">Spiel aktiv</div>
+    <div id="vsGame">- vs -</div>
+    <div id="board"></div>
+    <div style="margin-top:10px">
+      <button id="endToLobbyBtn" class="secondary">Spiel beenden und zur Lobby</button>
+    </div>
+    <div id="gameNote" class="note" style="margin-top:10px"></div>
+    <div id="libError3" class="error hidden"></div>
+  </div>
+
+  <!-- Firebase compat -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
   <script>
-  // ---------- Robust loader for external libs (tries multiple CDNs) ----------
+  // Robust loader for external libs (CSS + JS): chessground + chess.js
   const CSS_CANDIDATES = [
     'https://cdn.jsdelivr.net/npm/chessground@7.0.0/dist/chessground.min.css',
     'https://unpkg.com/chessground@7.0.0/dist/chessground.min.css'
@@ -71,93 +99,66 @@
   };
 
   function loadCssSequential(urls) {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       let idx = 0;
-      function tryNext() {
+      function next() {
         if (idx >= urls.length) { resolve(false); return; }
         const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = urls[idx++];
+        link.rel = 'stylesheet'; link.href = urls[idx++];
         link.onload = () => resolve(true);
-        link.onerror = () => {
-          // try next URL
-          tryNext();
-        };
+        link.onerror = () => next();
         document.head.appendChild(link);
       }
-      tryNext();
+      next();
     });
   }
 
-  function loadScriptSequential(urls, testGlobalName, timeoutMs = 8000) {
-    return new Promise((resolve, reject) => {
+  function loadScriptSequential(urls, testGlobal, timeoutMs = 7000) {
+    return new Promise(resolve => {
       let idx = 0;
-      let timedOut = false;
-      function tryNext() {
-        if (timedOut) return;
-        if (typeof window[testGlobalName] !== 'undefined') { resolve(true); return; }
+      function nextAttempt() {
+        if (typeof window[testGlobal] !== 'undefined') { resolve(true); return; }
         if (idx >= urls.length) { resolve(false); return; }
-        const url = urls[idx++];
         const s = document.createElement('script');
-        s.src = url;
-        s.async = false;
-        let done = false;
+        const url = urls[idx++]; s.src = url; s.async = false;
+        let settled = false;
         s.onload = () => {
-          // small delay to allow global to be set
           setTimeout(() => {
-            if (typeof window[testGlobalName] !== 'undefined') {
-              done = true;
-              resolve(true);
-            } else {
-              // maybe this CDN didn't provide the expected global
-              if (!done) tryNext();
-            }
+            if (typeof window[testGlobal] !== 'undefined') { settled = true; resolve(true); }
+            else if (!settled) nextAttempt();
           }, 50);
         };
-        s.onerror = () => {
-          if (!done) tryNext();
-        };
+        s.onerror = () => { if (!settled) nextAttempt(); };
         document.head.appendChild(s);
-
-        // safety timeout for this attempt
         setTimeout(() => {
-          if (typeof window[testGlobalName] !== 'undefined') { resolve(true); return; }
-          // proceed to next candidate
-          tryNext();
+          if (typeof window[testGlobal] !== 'undefined') { resolve(true); return; }
+          if (!settled) nextAttempt();
         }, timeoutMs);
       }
-      tryNext();
+      nextAttempt();
     });
   }
 
-  async function ensureLibraries() {
-    // try CSS first (non-blocking)
-    await loadCssSequential(CSS_CANDIDATES);
-
-    // then try JS libs
-    const chessgroundLoaded = await loadScriptSequential(JS_CANDIDATES.chessground, 'Chessground');
-    const chessjsLoaded = await loadScriptSequential(JS_CANDIDATES.chessjs, 'Chess');
-
-    return { chessgroundLoaded, chessjsLoaded };
-  }
-
-  // ---------- App code ----------
   document.addEventListener('DOMContentLoaded', async () => {
-    const libStatus = document.getElementById('libError');
-    const { chessgroundLoaded, chessjsLoaded } = await ensureLibraries();
+    // try to load CSS + JS libs
+    const cssOk = await loadCssSequential(CSS_CANDIDATES);
+    const cgOk = await loadScriptSequential(JS_CANDIDATES.chessground, 'Chessground');
+    const chessJsOk = await loadScriptSequential(JS_CANDIDATES.chessjs, 'Chess');
 
-    if (!chessgroundLoaded || !chessjsLoaded) {
-      libStatus.style.display = 'block';
-      libStatus.innerText = 'Fehler: Externe Bibliotheken konnten nicht geladen werden. Bitte Tracking-Protection/Adblocker für die Domain deaktivieren oder CDN-Hosts (jsdelivr, unpkg, cdnjs) erlauben.';
-      // allow user to still try to continue, but disable join button
-      document.getElementById('joinBtn').disabled = true;
+    if (!cgOk || !chessJsOk) {
+      // show errors on all pages
+      document.getElementById('libError1').classList.remove('hidden');
+      document.getElementById('libError1').innerText = 'Bibliotheken (chessground / chess.js) konnten nicht geladen werden — Tracking-Protection/CDN blockiert?';
+      document.getElementById('libError2').classList.remove('hidden');
+      document.getElementById('libError2').innerText = 'Bibliotheken (chessground / chess.js) konnten nicht geladen werden — Tracking-Protection/CDN blockiert?';
+      document.getElementById('libError3').classList.remove('hidden');
+      document.getElementById('libError3').innerText = 'Bibliotheken (chessground / chess.js) konnten nicht geladen werden — Tracking-Protection/CDN blockiert?';
+      // still show page1 so user can fix environment
+      showPage(1);
       return;
     }
 
-    // now safe to run the app
-    // -----------------------
-    // Firebase-Konfiguration: hier eigene Werte eintragen
-    // -----------------------
+    // Firebase config: Trage hier deine Werte ein
     const firebaseConfig = {
         apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
         authDomain: "schach-online-25607.firebaseapp.com",
@@ -168,124 +169,240 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // UI
-    const lobbyEl = document.getElementById('lobby');
-    const gameEl  = document.getElementById('game');
-    const statusEl = document.getElementById('status');
+    // UI references
+    const page1 = document.getElementById('page1');
+    const page2 = document.getElementById('page2');
+    const page3 = document.getElementById('page3');
+    const goLobbyBtn = document.getElementById('goLobbyBtn');
+    const playerNameStart = document.getElementById('playerNameStart');
+    const gameCodeStart = document.getElementById('gameCodeStart');
+
+    const leaveLobbyBtn = document.getElementById('leaveLobbyBtn');
+    const startBtn = document.getElementById('startBtn');
+    const startCount = document.getElementById('startCount');
+    const countdownBox = document.getElementById('countdownBox');
+    const countdownNumber = document.getElementById('countdownNumber');
+    const abortStartBtn = document.getElementById('abortStartBtn');
+
     const vsEl = document.getElementById('vs');
+    const statusText = document.getElementById('statusText');
+
     const boardEl = document.getElementById('board');
-    const gameCodeInput = document.getElementById('gameCode');
-    const playerNameInput = document.getElementById('playerName');
-    const joinBtn = document.getElementById('joinBtn');
-    const leaveBtn = document.getElementById('leaveBtn');
+    const vsGame = document.getElementById('vsGame');
+    const gameStatus = document.getElementById('gameStatus');
+    const endToLobbyBtn = document.getElementById('endToLobbyBtn');
+    const gameNote = document.getElementById('gameNote');
 
     // State
     let myId = null;
-    let mySlot = null; // 'player1' oder 'player2'
-    let myColor = null; // 'white' oder 'black'
-    let currentGameId = null;
+    let mySlot = null;        // player1 or player2
+    let myColor = null;       // 'white' or 'black'
+    let gameId = null;
     let playersRef = null;
-    let gameRef = null; // root for game data
-    let cg = null;      // chessground instance
-    let chess = null;   // chess.js instance
+    let gameRef = null;
+    let cg = null;            // chessground instance
+    let chess = null;         // chess.js instance
     let listenersAttached = false;
+    let countdownTimer = null;
+    let countdownTarget = null; // timestamp in ms when countdown finishes
 
-    // Show lobby
-    lobbyEl.style.display = 'block';
+    // Helpers: show pages
+    function showPage(n) {
+      page1.style.display = 'none';
+      page2.style.display = 'none';
+      page3.style.display = 'none';
+      if (n === 1) page1.style.display = 'block';
+      if (n === 2) page2.style.display = 'block';
+      if (n === 3) page3.style.display = 'block';
+    }
 
-    // UI update
-    function updateGameUI(players, fen) {
+    // initially show page1
+    showPage(1);
+
+    // Update lobby UI from players object and fen
+    function updateLobbyUI(players, fen) {
       const p1 = players && players.player1 ? players.player1.name : null;
       const p2 = players && players.player2 ? players.player2.name : null;
       vsEl.innerText = `${p1 || '-'}  vs  ${p2 || '-'}`;
 
-      const count = (p1 ? 1:0) + (p2?1:0);
-      if (mySlot) {
-        const slotNumber = mySlot === 'player1' ? '1/2' : '2/2';
-        if (count >= 2) statusEl.innerText = `${slotNumber} ready`;
-        else statusEl.innerText = `${slotNumber} — warte auf zweiten Spieler...`;
-      } else {
-        statusEl.innerText = `${count}/2`;
-      }
+      const countPlayers = (p1?1:0) + (p2?1:0);
+      statusText.innerText = `${countPlayers}/2 — Lobby`;
 
-      if (fen && cg && chess) {
-        if (chess.fen() !== fen) {
-          chess.load(fen);
-          cg.set({fen: fen});
-        }
-      }
+      const startA = players && players.player1 && players.player1.readyToStart ? 1:0;
+      const startB = players && players.player2 && players.player2.readyToStart ? 1:0;
+      const startSum = startA + startB;
+      startCount.innerText = `${startSum}/2 Spieler auf Start`;
+
+      // If startAt set and page2 shown -> show countdown (handled elsewhere)
+      // If fen provided and we're on page3, handled in game listeners
     }
 
-    // attach listeners
+    // Attach DB listeners to keep lobby/game in sync
     function attachListeners() {
-      if (!gameRef || listenersAttached) return;
+      if (!gameRef || !playersRef || listenersAttached) return;
       listenersAttached = true;
 
+      // players change
       playersRef.on('value', snap => {
         const players = snap.val() || {};
+        // update lobby UI
         gameRef.child('fen').once('value').then(s => {
           const fen = s.val() || null;
-          updateGameUI(players, fen);
+          updateLobbyUI(players, fen);
         });
+
+        // If both joined and page2 waiting, check start flags
+        checkStartCondition(players);
       });
 
+      // listen for startAt changes (server timestamp)
+      gameRef.child('startAt').on('value', snap => {
+        const startAt = snap.val();
+        if (startAt) {
+          // server timestamp in ms
+          startCountdown(startAt);
+        } else {
+          stopCountdown();
+        }
+      });
+
+      // listen for finished flag
+      gameRef.child('finished').on('value', snap => {
+        const finished = snap.val();
+        if (finished) {
+          // someone finished the game -> navigate back to lobby page2
+          stopGameAndReturnToLobby('Partie beendet — zurück zur Lobby');
+        }
+      });
+
+      // listen fen updates for game page
       gameRef.child('fen').on('value', snap => {
         const fen = snap.val();
-        if (!fen || !chess) return;
-        if (chess.fen() !== fen) {
+        if (!fen) return;
+        if (chess && chess.fen() !== fen) {
           chess.load(fen);
-          cg.set({fen: fen});
+          if (cg) cg.set({fen: fen});
         }
       });
     }
 
-    // init local board
-    function initLocalBoard(initialFen) {
+    // Check both players clicked start -> try to set startAt (transaction)
+    function checkStartCondition(players) {
+      if (!players || !players.player1 || !players.player2) return;
+      const ready1 = !!players.player1.readyToStart;
+      const ready2 = !!players.player2.readyToStart;
+      if (ready1 && ready2) {
+        // set startAt only once using transaction (if null)
+        gameRef.child('startAt').transaction(current => {
+          if (current) return; // already set -> abort
+          return firebase.database.ServerValue.TIMESTAMP;
+        }).catch(err => console.error('startAt transaction failed', err));
+      }
+    }
+
+    // Countdown management
+    function startCountdown(startAtServerTs) {
+      // startAtServerTs is server timestamp in ms at assignment moment
+      // Target = startAtServerTs + 3000 ms
+      countdownTarget = Number(startAtServerTs) + 3000;
+      countdownBox.classList.remove('hidden');
+
+      function tick() {
+        const now = Date.now();
+        const remainMs = countdownTarget - now;
+        if (remainMs <= 0) {
+          countdownNumber.innerText = '0';
+          stopCountdown();
+          // Go to page3 (game) if not aborted
+          enterGamePage();
+          return;
+        }
+        const sec = Math.ceil(remainMs / 1000);
+        countdownNumber.innerText = String(sec);
+        countdownTimer = setTimeout(tick, 200);
+      }
+      // start tick
+      if (countdownTimer) clearTimeout(countdownTimer);
+      tick();
+    }
+
+    function stopCountdown() {
+      if (countdownTimer) clearTimeout(countdownTimer);
+      countdownTimer = null;
+      countdownTarget = null;
+      countdownBox.classList.add('hidden');
+    }
+
+    // Abort start -> remove startAt from DB (and keep other flags as-is)
+    abortStartBtn.addEventListener('click', () => {
+      if (!gameRef) return;
+      gameRef.child('startAt').remove().catch(err => console.error('abort remove failed', err));
+    });
+
+    // Enter game page 3: initialize board + listeners
+    function enterGamePage() {
+      stopCountdown();
+      // initialize chess and board
+      gameRef.child('fen').once('value').then(s => {
+        const fen = s.val() || (new Chess()).fen();
+        initGameBoard(fen);
+        showPage(3);
+      });
+    }
+
+    // Initialize chess.js + chessground for gameplay
+    function initGameBoard(initialFen) {
       chess = new Chess();
       if (initialFen) chess.load(initialFen);
 
-      // Destroy previous instance if exists
+      // orientation: player1 = white, player2 = black
+      const orientation = myColor || 'white';
+
+      // destroy previous cg if any
       if (cg && typeof cg.destroy === 'function') cg.destroy();
       else if (cg && typeof cg.stop === 'function') cg.stop();
+
       cg = Chessground(boardEl, {
         fen: chess.fen(),
-        orientation: myColor || 'white',
+        orientation: orientation,
         movable: {
-          color: myColor || 'white',
+          color: orientation,
           free: false,
           events: {
             after: (orig, dest) => {
               if (!chess) return;
-              const turn = chess.turn() === 'w' ? 'white' : 'black';
-              if (turn !== myColor) {
-                // not our turn -> reload server state
+              const turnColor = chess.turn() === 'w' ? 'white' : 'black';
+              if (turnColor !== orientation) {
+                // not our turn -> reload server fen
                 gameRef.child('fen').once('value').then(s => {
-                  const fen = s.val();
-                  if (fen) {
-                    chess.load(fen);
-                    cg.set({fen: fen});
-                  }
+                  const fen = s.val(); if (fen) { chess.load(fen); cg.set({fen: fen}); }
                 });
                 return;
               }
 
               const move = chess.move({from: orig, to: dest, promotion: 'q'});
               if (!move) {
-                // invalid -> reload
+                // invalid move -> reload
                 cg.set({fen: chess.fen()});
                 return;
               }
 
               const newFen = chess.fen();
-              gameRef.child('fen').set(newFen).catch(err => {
-                // revert on error by reloading server fen
-                console.error('DB write failed', err);
+              // write fen to DB
+              gameRef.child('fen').set(newFen).then(() => {
+                // check for checkmate
+                if (chess.in_checkmate && chess.in_checkmate()) {
+                  // mark finished and reset start flags so lobby returns
+                  gameRef.update({ finished: true, startAt: null }).catch(e => console.error(e));
+                  // reset players' start flags
+                  playersRef.child('player1').child('readyToStart').set(false).catch(()=>{});
+                  playersRef.child('player2').child('readyToStart').set(false).catch(()=>{});
+                }
+              }).catch(err => {
+                console.error('Failed to write fen', err);
+                // reload server fen if write failed
                 gameRef.child('fen').once('value').then(s => {
-                  const fen = s.val();
-                  if (fen) {
-                    chess.load(fen);
-                    cg.set({fen: fen});
-                  }
+                  const fen = s.val(); if (fen) { chess.load(fen); cg.set({fen: fen}); }
                 });
               });
             }
@@ -293,100 +410,167 @@
         },
         animation: {enabled: true}
       });
+
+      // update game UI names
+      playersRef.once('value').then(s => {
+        const players = s.val() || {};
+        const p1 = players.player1 ? players.player1.name : '-';
+        const p2 = players.player2 ? players.player2.name : '-';
+        vsGame.innerText = `${p1}  vs  ${p2}`;
+        gameStatus.innerText = `Du spielst: ${myColor === 'white' ? 'Weiß' : 'Schwarz'}`;
+      });
     }
 
-    // join logic
-    joinBtn.addEventListener('click', () => {
-      const gameId = String(gameCodeInput.value||'').trim();
-      const name = String(playerNameInput.value||'').trim() || 'Spieler';
-      if (!gameId) { alert('Bitte Spiel-Code eingeben.'); return; }
+    // End game and return to lobby
+    function stopGameAndReturnToLobby(msg) {
+      // cleanup local game UI
+      if (cg && typeof cg.destroy === 'function') cg.destroy();
+      else if (cg && typeof cg.stop === 'function') cg.stop();
+      cg = null;
+      chess = null;
+      // clear finished flag & startAt & keep players in lobby for restart
+      gameRef.child('finished').remove().catch(()=>{});
+      gameRef.child('startAt').remove().catch(()=>{});
+      // ensure readyToStart flags false so manual re-start required
+      playersRef.child('player1').child('readyToStart').set(false).catch(()=>{});
+      playersRef.child('player2').child('readyToStart').set(false).catch(()=>{});
+      // show page2
+      showPage(2);
+      gameNote.innerText = msg || 'Zur Lobby zurückgekehrt';
+    }
 
+    // Clean up & leave lobby
+    leaveLobbyBtn.addEventListener('click', () => {
+      if (playersRef && mySlot) {
+        playersRef.child(mySlot).remove().then(() => {
+          resetLocalState();
+        }).catch(() => resetLocalState());
+      } else resetLocalState();
+    });
+
+    // End to lobby from page3 (manual)
+    endToLobbyBtn.addEventListener('click', () => {
+      // set finished to true to ensure both clients go back
+      if (gameRef) {
+        gameRef.update({ finished: true, startAt: null }).catch(()=>{});
+        playersRef.child('player1').child('readyToStart').set(false).catch(()=>{});
+        playersRef.child('player2').child('readyToStart').set(false).catch(()=>{});
+      }
+    });
+
+    // Start button toggles player's readyToStart flag
+    startBtn.addEventListener('click', () => {
+      if (!playersRef || !mySlot) return;
+      // read current flag and toggle
+      playersRef.child(mySlot).child('readyToStart').once('value').then(s => {
+        const cur = !!s.val();
+        playersRef.child(mySlot).update({
+          readyToStart: !cur,
+          readyAt: !cur ? firebase.database.ServerValue.TIMESTAMP : null
+        }).catch(e => console.error('set ready failed', e));
+      });
+    });
+
+    // When joining: perform transaction to claim slot and attach listeners
+    goLobbyBtn.addEventListener('click', () => {
+      const name = String(playerNameStart.value || '').trim() || 'Spieler';
+      const code = String(gameCodeStart.value || '').trim();
+      if (!code) { alert('Bitte einen Spiel-Code eingeben'); return; }
       myId = Math.random().toString(36).substring(2,9);
-      currentGameId = gameId;
-      playersRef = db.ref('games/' + currentGameId + '/players');
-      gameRef = db.ref('games/' + currentGameId);
+      gameId = code;
+      playersRef = db.ref('games/' + gameId + '/players');
+      gameRef = db.ref('games/' + gameId);
 
+      // Transaction: claim player1 or player2
       playersRef.transaction(current => {
         if (current === null) {
-          return { player1: { id: myId, name: name } };
+          return { player1: { id: myId, name: name, readyToStart: false } };
         } else {
           if (!current.player1) {
-            current.player1 = { id: myId, name: name };
+            current.player1 = { id: myId, name: name, readyToStart: false };
             return current;
           } else if (!current.player2 && current.player1.id !== myId) {
-            current.player2 = { id: myId, name: name };
+            current.player2 = { id: myId, name: name, readyToStart: false };
             return current;
           } else if (current.player1 && current.player1.id === myId) {
             current.player1.name = name; return current;
           } else if (current.player2 && current.player2.id === myId) {
             current.player2.name = name; return current;
           } else {
-            return; // both occupied
+            return; // full
           }
         }
       }, (err, committed, snapshot) => {
-        if (err) { alert('Fehler: ' + err.message); return; }
-        if (!committed) { alert('Spiel ist bereits voll.'); return; }
+        if (err) { alert('Fehler beim Beitreten: ' + err.message); return; }
+        if (!committed) { alert('Spiel ist bereits voll (2 Spieler).'); return; }
 
         const players = snapshot.val() || {};
         if (players.player1 && players.player1.id === myId) mySlot = 'player1';
         else if (players.player2 && players.player2.id === myId) mySlot = 'player2';
-        else { alert('Konnte keinen Slot zuweisen.'); return; }
+        else { alert('Kein Slot zuweisbar'); return; }
 
         myColor = mySlot === 'player1' ? 'white' : 'black';
 
-        // onDisconnect cleanup
+        // cleanup on disconnect
         playersRef.child(mySlot).onDisconnect().remove();
 
-        // Ensure fen exists (transactionally)
+        // ensure fen exists (transactionally set start position if missing)
         gameRef.child('fen').transaction(f => {
           if (!f) {
-            const tempChess = new Chess();
-            return tempChess.fen();
+            const c = new Chess();
+            return c.fen();
           }
           return f;
         }).then(() => {
-          // switch UI
-          lobbyEl.style.display = 'none';
-          gameEl.style.display = 'block';
-
-          // initialize local board (will be kept in sync by listeners)
-          initLocalBoard();
-
+          // show page2 (lobby)
+          showPage(2);
+          // attach listeners
           attachListeners();
         }).catch(e => {
-          console.error(e);
+          console.error('fen transaction failed', e);
           alert('Fehler beim Initialisieren des Spiels.');
         });
       });
     });
 
-    // leave
-    leaveBtn.addEventListener('click', () => {
+    // Reset local references and UI to page1
+    function resetLocalState() {
       if (playersRef && mySlot) {
-        playersRef.child(mySlot).remove().then(() => resetLocalState());
-      } else resetLocalState();
-    });
-
-    function resetLocalState(){
-      if (playersRef) playersRef.off();
-      if (gameRef) gameRef.child('fen').off();
-      listenersAttached = false;
-      myId = null; mySlot = null; myColor = null; currentGameId = null; playersRef = null; gameRef = null;
-      if (cg) {
-        if (typeof cg.destroy === 'function') cg.destroy();
-        else if (typeof cg.stop === 'function') cg.stop();
-        cg = null;
+        // remove onDisconnect
+        try { playersRef.child(mySlot).onDisconnect().cancel(); } catch(e){}
       }
-      chess = null;
-      gameEl.style.display = 'none';
-      lobbyEl.style.display = 'block';
-      statusEl.innerText = 'Warte...';
+      if (playersRef) playersRef.off();
+      if (gameRef) gameRef.child('startAt').off();
+      if (gameRef) gameRef.child('finished').off();
+      if (gameRef) gameRef.child('fen').off();
+
+      listenersAttached = false;
+      myId = null; mySlot = null; myColor = null; gameId = null;
+      playersRef = null; gameRef = null;
+
+      if (cg && typeof cg.destroy === 'function') cg.destroy();
+      else if (cg && typeof cg.stop === 'function') cg.stop();
+      cg = null; chess = null;
+
+      // reset UIs
+      showPage(1);
+      countdownBox.classList.add('hidden');
+      gameNote.innerText = '';
+      gameStatus.innerText = '';
+      vsGame.innerText = '- vs -';
       vsEl.innerText = '- vs -';
-      gameCodeInput.value = '';
+      startCount.innerText = '0/2 Spieler auf Start';
+      statusText.innerText = 'Warte auf Spieler...';
     }
 
-    // End of app
+    // On page unload, ensure we remove our player slot quickly
+    window.addEventListener('beforeunload', () => {
+      if (playersRef && mySlot) {
+        try { playersRef.child(mySlot).remove(); } catch(e){}
+      }
+    });
+
+    // end of DOMContentLoaded
   }); // DOMContentLoaded
   </script>
 </body>
