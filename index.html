@@ -28,32 +28,38 @@ button { padding: 5px 10px; font-size: 14px; margin-left: 5px; }
 <!-- Bibliotheken -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js"></script>
 <script src="https://unpkg.com/chessground@7.0.0/dist/chessground.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js"></script>
+
+<!-- Firebase v9 compat (funktioniert global) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
 <script>
+// ----------------------------
+// Globale Variablen
+// ----------------------------
+let board;
+let currentGame = "";
+let myColor = "white";
+const game = new Chess();
+
 // ----------------------------
 // Firebase Config einfügen
 // ----------------------------
 const firebaseConfig = {
-  apiKey: "DEIN_API_KEY",
-  authDomain: "DEIN_PROJECT_ID.firebaseapp.com",
-  databaseURL: "https://DEIN_PROJECT_ID-default-rtdb.firebaseio.com",
-  projectId: "DEIN_PROJECT_ID"
+  apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
+  authDomain: "schach-online-25607.firebaseapp.com",
+  databaseURL: "https://schach-online-25607-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "schach-online-25607"
 };
 
+// Firebase initialisieren
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 // ----------------------------
-// Schach-Logik
+// Chessground Brett initialisieren
 // ----------------------------
-const game = new Chess();
-
-// ----------------------------
-// Chessground-Brett
-// ----------------------------
-let board = Chessground(document.getElementById("board"), {
+board = Chessground(document.getElementById("board"), {
   draggable: true,
   orientation: 'white',
   highlight: true,
@@ -62,14 +68,9 @@ let board = Chessground(document.getElementById("board"), {
     free: false,
     color: 'white',
     showDests: true,
-    events: {
-      after: onMove
-    }
+    events: { after: onMove }
   }
 });
-
-let currentGame = "";
-let myColor = "white";
 
 // ----------------------------
 // Spiel beitreten / erstellen
@@ -79,17 +80,19 @@ function joinGame() {
   if(!input) input = Math.random().toString(36).substring(2,8);
   currentGame = input;
 
+  // Spielerfarbe zufällig zuweisen
   myColor = Math.random() > 0.5 ? "white" : "black";
   board.setOrientation(myColor);
   board.state.movable.color = myColor;
 
+  // Moves vom Server hören
   listenMoves();
 
   alert(`Du spielst ${myColor}. Spiel-ID: ${currentGame}`);
 }
 
 // ----------------------------
-// Zug ausführen und senden
+// Eigene Züge ausführen und senden
 // ----------------------------
 function onMove(from, to) {
   const move = game.move({from, to, promotion: 'q'});
