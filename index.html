@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Online Schach</title>
 
+  <!-- lokale CSS (empfohlen wenn Tracking-Protection/CDN blockiert) -->
+  <link rel="stylesheet" href="libs/chessground.base.css">
+  <link rel="stylesheet" href="libs/chessground.cburnett.css">
+
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:24px auto;padding:12px;text-align:center}
+    body{font-family:Arial,Helvetica,sans-serif;max-width:920px;margin:24px auto;padding:12px;text-align:center}
     h1{margin-bottom:8px}
     .card{border:1px solid #ddd;padding:18px;border-radius:8px;margin:12px auto}
     .row{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
-    input[type=text]{padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;width:240px}
+    input[type=text]{padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;width:260px}
     button{padding:9px 14px;border-radius:6px;border:0;background:#0b67ff;color:#fff;cursor:pointer}
     button.secondary{background:#6c757d}
     #board{width:560px;height:560px;margin:16px auto}
@@ -21,6 +25,8 @@
     #page1,#page2,#page3{display:none}
     #statusText{margin-top:8px;font-weight:600}
     #vs{margin-top:10px;font-weight:700}
+    .small{font-size:13px;color:#444}
+    footer{margin-top:18px;font-size:12px;color:#777}
   </style>
 </head>
 <body>
@@ -76,103 +82,47 @@
     <div id="libError3" class="error hidden"></div>
   </div>
 
-  <!-- Firebase compat -->
+  <!-- lokale JS-Files (falls vorhanden) -->
+  <script src="libs/chessground.min.js"></script>
+  <script src="libs/chess.min.js"></script>
+
+  <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
+  <!-- Fallback loader: versuche CDNs, falls lokale libs nicht verfügbar -->
   <script>
-  // Robust loader for external libs (CSS + JS): chessground + chess.js
-  const CSS_CANDIDATES = [
-    'https://cdn.jsdelivr.net/npm/chessground@7.0.0/dist/chessground.min.css',
-    'https://unpkg.com/chessground@7.0.0/dist/chessground.min.css'
-  ];
-  const JS_CANDIDATES = {
-    chessground: [
-      'https://cdn.jsdelivr.net/npm/chessground@7.0.0/dist/chessground.min.js',
-      'https://unpkg.com/chessground@7.0.0/dist/chessground.min.js'
-    ],
-    chessjs: [
-      'https://cdn.jsdelivr.net/npm/chess.js@1.0.0/chess.min.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js',
-      'https://unpkg.com/chess.js@1.0.0/chess.min.js'
-    ]
-  };
-
-  function loadCssSequential(urls) {
-    return new Promise(resolve => {
-      let idx = 0;
-      function next() {
-        if (idx >= urls.length) { resolve(false); return; }
-        const link = document.createElement('link');
-        link.rel = 'stylesheet'; link.href = urls[idx++];
-        link.onload = () => resolve(true);
-        link.onerror = () => next();
-        document.head.appendChild(link);
-      }
-      next();
-    });
-  }
-
-  function loadScriptSequential(urls, testGlobal, timeoutMs = 7000) {
-    return new Promise(resolve => {
-      let idx = 0;
-      function nextAttempt() {
-        if (typeof window[testGlobal] !== 'undefined') { resolve(true); return; }
-        if (idx >= urls.length) { resolve(false); return; }
-        const s = document.createElement('script');
-        const url = urls[idx++]; s.src = url; s.async = false;
-        let settled = false;
-        s.onload = () => {
-          setTimeout(() => {
-            if (typeof window[testGlobal] !== 'undefined') { settled = true; resolve(true); }
-            else if (!settled) nextAttempt();
-          }, 50);
-        };
-        s.onerror = () => { if (!settled) nextAttempt(); };
+    (function ensureLibs() {
+      // Wenn Chess oder Chessground nicht definiert sind, lade von CDNs
+      function loadScript(src, cb) {
+        var s = document.createElement('script'); s.src = src; s.onload = cb; s.onerror = cb;
         document.head.appendChild(s);
-        setTimeout(() => {
-          if (typeof window[testGlobal] !== 'undefined') { resolve(true); return; }
-          if (!settled) nextAttempt();
-        }, timeoutMs);
       }
-      nextAttempt();
-    });
-  }
+      function loadCss(href) {
+        var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l);
+      }
 
-  document.addEventListener('DOMContentLoaded', async () => {
-    // try to load CSS + JS libs
-    const cssOk = await loadCssSequential(CSS_CANDIDATES);
-    const cgOk = await loadScriptSequential(JS_CANDIDATES.chessground, 'Chessground');
-    const chessJsOk = await loadScriptSequential(JS_CANDIDATES.chessjs, 'Chess');
+      if (typeof Chess === 'undefined') {
+        // chess.js fallback
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.1/chess.min.js', function(){});
+      }
+      if (typeof Chessground === 'undefined') {
+        // chessground fallback (css + js)
+        loadCss('https://cdn.jsdelivr.net/npm/chessground@9.2.1/assets/chessground.base.css');
+        loadCss('https://cdn.jsdelivr.net/npm/chessground@9.2.1/assets/chessground.cburnett.css');
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/chessground/9.2.1/chessground.min.js', function(){});
+      }
+    })();
+  </script>
 
-    if (!cgOk || !chessJsOk) {
-      // show errors on all pages
-      document.getElementById('libError1').classList.remove('hidden');
-      document.getElementById('libError1').innerText = 'Bibliotheken (chessground / chess.js) konnten nicht geladen werden — Tracking-Protection/CDN blockiert?';
-      document.getElementById('libError2').classList.remove('hidden');
-      document.getElementById('libError2').innerText = 'Bibliotheken (chessground / chess.js) konnten nicht geladen werden — Tracking-Protection/CDN blockiert?';
-      document.getElementById('libError3').classList.remove('hidden');
-      document.getElementById('libError3').innerText = 'Bibliotheken (chessground / chess.js) konnten nicht geladen werden — Tracking-Protection/CDN blockiert?';
-      // still show page1 so user can fix environment
-      showPage(1);
-      return;
-    }
-
-    // Firebase config: Trage hier deine Werte ein
-    const firebaseConfig = {
-        apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
-        authDomain: "schach-online-25607.firebaseapp.com",
-        databaseURL: "https://schach-online-25607-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId: "schach-online-25607"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-
-    // UI references
+  <!-- App Code -->
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // DOM refs
     const page1 = document.getElementById('page1');
     const page2 = document.getElementById('page2');
     const page3 = document.getElementById('page3');
+
     const goLobbyBtn = document.getElementById('goLobbyBtn');
     const playerNameStart = document.getElementById('playerNameStart');
     const gameCodeStart = document.getElementById('gameCodeStart');
@@ -193,20 +143,11 @@
     const endToLobbyBtn = document.getElementById('endToLobbyBtn');
     const gameNote = document.getElementById('gameNote');
 
-    // State
-    let myId = null;
-    let mySlot = null;        // player1 or player2
-    let myColor = null;       // 'white' or 'black'
-    let gameId = null;
-    let playersRef = null;
-    let gameRef = null;
-    let cg = null;            // chessground instance
-    let chess = null;         // chess.js instance
-    let listenersAttached = false;
-    let countdownTimer = null;
-    let countdownTarget = null; // timestamp in ms when countdown finishes
+    const libError1 = document.getElementById('libError1');
+    const libError2 = document.getElementById('libError2');
+    const libError3 = document.getElementById('libError3');
 
-    // Helpers: show pages
+    // small helper
     function showPage(n) {
       page1.style.display = 'none';
       page2.style.display = 'none';
@@ -216,104 +157,122 @@
       if (n === 3) page3.style.display = 'block';
     }
 
-    // initially show page1
     showPage(1);
 
-    // Update lobby UI from players object and fen
-    function updateLobbyUI(players, fen) {
+    // Check libs availability after small timeout (give fallback loader time)
+    setTimeout(function checkLibs() {
+      const chessOk = typeof Chess !== 'undefined';
+      const cgOk = typeof Chessground !== 'undefined';
+      if (!chessOk || !cgOk) {
+        const msg = 'Bibliotheken (chess.js / chessground) fehlen oder werden blockiert. Lege die Dateien in ./libs/ oder deaktiviere Tracking-Protection.';
+        libError1.classList.remove('hidden'); libError1.innerText = msg;
+        libError2.classList.remove('hidden'); libError2.innerText = msg;
+        libError3.classList.remove('hidden'); libError3.innerText = msg;
+        goLobbyBtn.disabled = true;
+      }
+    }, 800);
+
+    // -------- Firebase config: TRAGE HIER DEINE WERTE EIN --------
+    const firebaseConfig = {
+        apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
+        authDomain: "schach-online-25607.firebaseapp.com",
+        databaseURL: "https://schach-online-25607-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "schach-online-25607"
+    };
+
+    // ----------------------------------------------------------
+    if (!firebaseConfig.apiKey || !firebaseConfig.databaseURL) {
+      // warn but still allow local dev
+      console.warn('Firebase nicht konfiguriert. Bitte firebaseConfig im Code ausfüllen.');
+    }
+    try {
+      firebase.initializeApp(firebaseConfig);
+    } catch (e) {
+      console.warn('Firebase init error (evtl. bereits initialisiert):', e);
+    }
+    const db = firebase.database();
+
+    // state
+    let myId = null;
+    let mySlot = null;
+    let myColor = null;
+    let gameId = null;
+    let playersRef = null;
+    let gameRef = null;
+    let cg = null;
+    let chess = null;
+    let listenersAttached = false;
+    let countdownTimer = null;
+    let countdownTarget = null;
+
+    // UI update
+    function updateLobbyUI(players) {
       const p1 = players && players.player1 ? players.player1.name : null;
       const p2 = players && players.player2 ? players.player2.name : null;
       vsEl.innerText = `${p1 || '-'}  vs  ${p2 || '-'}`;
-
       const countPlayers = (p1?1:0) + (p2?1:0);
       statusText.innerText = `${countPlayers}/2 — Lobby`;
-
       const startA = players && players.player1 && players.player1.readyToStart ? 1:0;
       const startB = players && players.player2 && players.player2.readyToStart ? 1:0;
-      const startSum = startA + startB;
-      startCount.innerText = `${startSum}/2 Spieler auf Start`;
-
-      // If startAt set and page2 shown -> show countdown (handled elsewhere)
-      // If fen provided and we're on page3, handled in game listeners
+      startCount.innerText = `${startA + startB}/2 Spieler auf Start`;
     }
 
-    // Attach DB listeners to keep lobby/game in sync
+    // attach DB listeners
     function attachListeners() {
       if (!gameRef || !playersRef || listenersAttached) return;
       listenersAttached = true;
 
-      // players change
       playersRef.on('value', snap => {
         const players = snap.val() || {};
-        // update lobby UI
         gameRef.child('fen').once('value').then(s => {
-          const fen = s.val() || null;
-          updateLobbyUI(players, fen);
+          updateLobbyUI(players, s.val());
         });
-
-        // If both joined and page2 waiting, check start flags
         checkStartCondition(players);
       });
 
-      // listen for startAt changes (server timestamp)
       gameRef.child('startAt').on('value', snap => {
         const startAt = snap.val();
-        if (startAt) {
-          // server timestamp in ms
-          startCountdown(startAt);
-        } else {
-          stopCountdown();
-        }
+        if (startAt) startCountdown(startAt);
+        else stopCountdown();
       });
 
-      // listen for finished flag
       gameRef.child('finished').on('value', snap => {
         const finished = snap.val();
-        if (finished) {
-          // someone finished the game -> navigate back to lobby page2
-          stopGameAndReturnToLobby('Partie beendet — zurück zur Lobby');
-        }
+        if (finished) stopGameAndReturnToLobby('Partie beendet — zurück zur Lobby');
       });
 
-      // listen fen updates for game page
       gameRef.child('fen').on('value', snap => {
         const fen = snap.val();
-        if (!fen) return;
-        if (chess && chess.fen() !== fen) {
+        if (!fen || !chess) return;
+        if (chess.fen() !== fen) {
           chess.load(fen);
           if (cg) cg.set({fen: fen});
         }
       });
     }
 
-    // Check both players clicked start -> try to set startAt (transaction)
     function checkStartCondition(players) {
       if (!players || !players.player1 || !players.player2) return;
       const ready1 = !!players.player1.readyToStart;
       const ready2 = !!players.player2.readyToStart;
       if (ready1 && ready2) {
-        // set startAt only once using transaction (if null)
         gameRef.child('startAt').transaction(current => {
-          if (current) return; // already set -> abort
+          if (current) return; // already set
           return firebase.database.ServerValue.TIMESTAMP;
         }).catch(err => console.error('startAt transaction failed', err));
       }
     }
 
-    // Countdown management
+    // Countdown
     function startCountdown(startAtServerTs) {
-      // startAtServerTs is server timestamp in ms at assignment moment
-      // Target = startAtServerTs + 3000 ms
       countdownTarget = Number(startAtServerTs) + 3000;
       countdownBox.classList.remove('hidden');
-
       function tick() {
         const now = Date.now();
         const remainMs = countdownTarget - now;
         if (remainMs <= 0) {
           countdownNumber.innerText = '0';
           stopCountdown();
-          // Go to page3 (game) if not aborted
           enterGamePage();
           return;
         }
@@ -321,28 +280,23 @@
         countdownNumber.innerText = String(sec);
         countdownTimer = setTimeout(tick, 200);
       }
-      // start tick
       if (countdownTimer) clearTimeout(countdownTimer);
       tick();
     }
-
     function stopCountdown() {
       if (countdownTimer) clearTimeout(countdownTimer);
       countdownTimer = null;
       countdownTarget = null;
       countdownBox.classList.add('hidden');
     }
-
-    // Abort start -> remove startAt from DB (and keep other flags as-is)
-    abortStartBtn.addEventListener('click', () => {
+    abortStartBtn.addEventListener('click', function () {
       if (!gameRef) return;
       gameRef.child('startAt').remove().catch(err => console.error('abort remove failed', err));
     });
 
-    // Enter game page 3: initialize board + listeners
+    // Enter game page
     function enterGamePage() {
       stopCountdown();
-      // initialize chess and board
       gameRef.child('fen').once('value').then(s => {
         const fen = s.val() || (new Chess()).fen();
         initGameBoard(fen);
@@ -350,15 +304,12 @@
       });
     }
 
-    // Initialize chess.js + chessground for gameplay
+    // Init board/game
     function initGameBoard(initialFen) {
       chess = new Chess();
       if (initialFen) chess.load(initialFen);
-
-      // orientation: player1 = white, player2 = black
       const orientation = myColor || 'white';
 
-      // destroy previous cg if any
       if (cg && typeof cg.destroy === 'function') cg.destroy();
       else if (cg && typeof cg.stop === 'function') cg.stop();
 
@@ -369,39 +320,28 @@
           color: orientation,
           free: false,
           events: {
-            after: (orig, dest) => {
+            after: function (orig, dest) {
               if (!chess) return;
               const turnColor = chess.turn() === 'w' ? 'white' : 'black';
               if (turnColor !== orientation) {
-                // not our turn -> reload server fen
                 gameRef.child('fen').once('value').then(s => {
                   const fen = s.val(); if (fen) { chess.load(fen); cg.set({fen: fen}); }
                 });
                 return;
               }
-
               const move = chess.move({from: orig, to: dest, promotion: 'q'});
-              if (!move) {
-                // invalid move -> reload
-                cg.set({fen: chess.fen()});
-                return;
-              }
-
+              if (!move) { cg.set({fen: chess.fen()}); return; }
               const newFen = chess.fen();
-              // write fen to DB
-              gameRef.child('fen').set(newFen).then(() => {
-                // check for checkmate
-                if (chess.in_checkmate && chess.in_checkmate()) {
-                  // mark finished and reset start flags so lobby returns
-                  gameRef.update({ finished: true, startAt: null }).catch(e => console.error(e));
-                  // reset players' start flags
+              gameRef.child('fen').set(newFen).then(function () {
+                // checkmate
+                if (typeof chess.in_checkmate === 'function' && chess.in_checkmate()) {
+                  gameRef.update({ finished: true, startAt: null }).catch(function(){});
                   playersRef.child('player1').child('readyToStart').set(false).catch(()=>{});
                   playersRef.child('player2').child('readyToStart').set(false).catch(()=>{});
                 }
-              }).catch(err => {
+              }).catch(function (err) {
                 console.error('Failed to write fen', err);
-                // reload server fen if write failed
-                gameRef.child('fen').once('value').then(s => {
+                gameRef.child('fen').once('value').then(function(s){
                   const fen = s.val(); if (fen) { chess.load(fen); cg.set({fen: fen}); }
                 });
               });
@@ -411,8 +351,7 @@
         animation: {enabled: true}
       });
 
-      // update game UI names
-      playersRef.once('value').then(s => {
+      playersRef.once('value').then(function (s) {
         const players = s.val() || {};
         const p1 = players.player1 ? players.player1.name : '-';
         const p2 = players.player2 ? players.player2.name : '-';
@@ -421,36 +360,29 @@
       });
     }
 
-    // End game and return to lobby
     function stopGameAndReturnToLobby(msg) {
-      // cleanup local game UI
       if (cg && typeof cg.destroy === 'function') cg.destroy();
       else if (cg && typeof cg.stop === 'function') cg.stop();
-      cg = null;
-      chess = null;
-      // clear finished flag & startAt & keep players in lobby for restart
+      cg = null; chess = null;
       gameRef.child('finished').remove().catch(()=>{});
       gameRef.child('startAt').remove().catch(()=>{});
-      // ensure readyToStart flags false so manual re-start required
       playersRef.child('player1').child('readyToStart').set(false).catch(()=>{});
       playersRef.child('player2').child('readyToStart').set(false).catch(()=>{});
-      // show page2
       showPage(2);
       gameNote.innerText = msg || 'Zur Lobby zurückgekehrt';
     }
 
-    // Clean up & leave lobby
-    leaveLobbyBtn.addEventListener('click', () => {
+    // Leave lobby
+    leaveLobbyBtn.addEventListener('click', function () {
       if (playersRef && mySlot) {
-        playersRef.child(mySlot).remove().then(() => {
+        playersRef.child(mySlot).remove().then(function () {
           resetLocalState();
-        }).catch(() => resetLocalState());
+        }).catch(function () { resetLocalState(); });
       } else resetLocalState();
     });
 
-    // End to lobby from page3 (manual)
-    endToLobbyBtn.addEventListener('click', () => {
-      // set finished to true to ensure both clients go back
+    // End game manually to lobby
+    endToLobbyBtn.addEventListener('click', function () {
       if (gameRef) {
         gameRef.update({ finished: true, startAt: null }).catch(()=>{});
         playersRef.child('player1').child('readyToStart').set(false).catch(()=>{});
@@ -458,31 +390,30 @@
       }
     });
 
-    // Start button toggles player's readyToStart flag
-    startBtn.addEventListener('click', () => {
+    // Start toggle
+    startBtn.addEventListener('click', function () {
       if (!playersRef || !mySlot) return;
-      // read current flag and toggle
-      playersRef.child(mySlot).child('readyToStart').once('value').then(s => {
+      playersRef.child(mySlot).child('readyToStart').once('value').then(function (s) {
         const cur = !!s.val();
         playersRef.child(mySlot).update({
           readyToStart: !cur,
           readyAt: !cur ? firebase.database.ServerValue.TIMESTAMP : null
-        }).catch(e => console.error('set ready failed', e));
+        }).catch(function(e){ console.error('set ready failed', e); });
       });
     });
 
-    // When joining: perform transaction to claim slot and attach listeners
-    goLobbyBtn.addEventListener('click', () => {
+    // Join lobby (claim slot)
+    goLobbyBtn.addEventListener('click', function () {
       const name = String(playerNameStart.value || '').trim() || 'Spieler';
       const code = String(gameCodeStart.value || '').trim();
       if (!code) { alert('Bitte einen Spiel-Code eingeben'); return; }
+
       myId = Math.random().toString(36).substring(2,9);
       gameId = code;
       playersRef = db.ref('games/' + gameId + '/players');
       gameRef = db.ref('games/' + gameId);
 
-      // Transaction: claim player1 or player2
-      playersRef.transaction(current => {
+      playersRef.transaction(function (current) {
         if (current === null) {
           return { player1: { id: myId, name: name, readyToStart: false } };
         } else {
@@ -500,7 +431,7 @@
             return; // full
           }
         }
-      }, (err, committed, snapshot) => {
+      }, function (err, committed, snapshot) {
         if (err) { alert('Fehler beim Beitreten: ' + err.message); return; }
         if (!committed) { alert('Spiel ist bereits voll (2 Spieler).'); return; }
 
@@ -510,33 +441,27 @@
         else { alert('Kein Slot zuweisbar'); return; }
 
         myColor = mySlot === 'player1' ? 'white' : 'black';
-
-        // cleanup on disconnect
         playersRef.child(mySlot).onDisconnect().remove();
 
-        // ensure fen exists (transactionally set start position if missing)
-        gameRef.child('fen').transaction(f => {
+        // ensure fen exists
+        gameRef.child('fen').transaction(function (f) {
           if (!f) {
             const c = new Chess();
             return c.fen();
           }
           return f;
-        }).then(() => {
-          // show page2 (lobby)
+        }).then(function () {
           showPage(2);
-          // attach listeners
           attachListeners();
-        }).catch(e => {
+        }).catch(function (e) {
           console.error('fen transaction failed', e);
           alert('Fehler beim Initialisieren des Spiels.');
         });
       });
     });
 
-    // Reset local references and UI to page1
     function resetLocalState() {
       if (playersRef && mySlot) {
-        // remove onDisconnect
         try { playersRef.child(mySlot).onDisconnect().cancel(); } catch(e){}
       }
       if (playersRef) playersRef.off();
@@ -552,7 +477,6 @@
       else if (cg && typeof cg.stop === 'function') cg.stop();
       cg = null; chess = null;
 
-      // reset UIs
       showPage(1);
       countdownBox.classList.add('hidden');
       gameNote.innerText = '';
@@ -563,15 +487,18 @@
       statusText.innerText = 'Warte auf Spieler...';
     }
 
-    // On page unload, ensure we remove our player slot quickly
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', function () {
       if (playersRef && mySlot) {
         try { playersRef.child(mySlot).remove(); } catch(e){}
       }
     });
 
-    // end of DOMContentLoaded
-  }); // DOMContentLoaded
+    // End DOMContentLoaded
+  });
   </script>
+
+  <footer>
+    Empfehlung: Lege die Bibliotheken unter <code>libs/</code> (chessground.base.css, chessground.cburnett.css, chessground.min.js, chess.min.js).
+  </footer>
 </body>
 </html>
