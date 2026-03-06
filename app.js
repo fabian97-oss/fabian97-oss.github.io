@@ -1,4 +1,3 @@
-
 // ----------------------------
 // Firebase Module importieren
 // ----------------------------
@@ -9,8 +8,6 @@ import { getDatabase, ref, push, onChildAdded }
 // ----------------------------
 // Firebase Config einfügen
 // ----------------------------
-
-// TODO: Deine Firebase Config einfügen
 const firebaseConfig = {
   apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
   authDomain: "schach-online-25607.firebaseapp.com",

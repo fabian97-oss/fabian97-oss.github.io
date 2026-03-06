@@ -2,22 +2,22 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Online Schach</title>
+  <title>Online Schach Multiplayer</title>
 
-  <!-- Chessboard CSS -->
+  <!-- Chessboard.js CSS -->
   <link rel="stylesheet"
     href="https://unpkg.com/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; }
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 30px; }
     #board { width: 400px; margin: 20px auto; }
-    input { padding: 5px; font-size: 14px; }
-    button { padding: 5px 10px; font-size: 14px; }
+    input { padding: 5px; font-size: 14px; width: 120px; }
+    button { padding: 5px 10px; font-size: 14px; margin-left: 5px; }
   </style>
 </head>
 <body>
 
-<h1>Online Schach</h1>
+<h1>Online Schach Multiplayer</h1>
 
 <div id="board"></div>
 
@@ -26,7 +26,7 @@
   <button onclick="joinGame()">Spiel beitreten</button>
 </div>
 
-<!-- jQuery (für chessboard.js) -->
+<!-- jQuery für Chessboard.js -->
 <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
 
 <!-- Chess.js -->
@@ -35,7 +35,7 @@
 <!-- Chessboard.js -->
 <script src="https://unpkg.com/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 
-<!-- App JS -->
+<!-- App.js -->
 <script type="module" src="app.js"></script>
 
 </body>
