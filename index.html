@@ -1,24 +1,25 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>Online Schach</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Online Schach</title>
+  <link rel="stylesheet" href="https://unpkg.com/chessground@7.0.0/dist/chessground.min.css" />
   <style>
-    body { font-family: Arial, sans-serif; max-width:720px; margin:40px auto; text-align:center; }
-    h1 { margin-bottom:10px; }
-    .card { border:1px solid #ddd; padding:20px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.03); }
-    .row { margin:12px 0; display:flex; justify-content:center; gap:8px; align-items:center; flex-wrap:wrap; }
-    input[type="text"]{ padding:8px 10px; font-size:16px; width:220px; border:1px solid #ccc; border-radius:4px; }
-    button { padding:9px 14px; font-size:16px; border-radius:6px; border:0; cursor:pointer; background:#0b67ff; color:#fff; }
-    button.secondary { background:#6c757d; }
-    #status { margin-top:10px; font-weight:600; }
-    #vs { margin-top:10px; font-size:18px; font-weight:600; }
-    #lobby, #game { display:none; }
+    body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:30px auto;padding:10px;text-align:center}
+    h1{margin-bottom:6px}
+    .card{border:1px solid #ddd;padding:18px;border-radius:8px;margin:12px auto}
+    .row{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+    input[type=text]{padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;width:220px}
+    button{padding:9px 14px;border-radius:6px;border:0;background:#0b67ff;color:#fff;cursor:pointer}
+    button.secondary{background:#6c757d}
+    #board{width:480px;height:480px;margin:16px auto}
+    #status{margin-top:8px;font-weight:600}
+    #vs{margin-top:10px;font-weight:700}
+    #lobby,#game{display:none}
   </style>
 </head>
 <body>
-
   <h1>Online Schach</h1>
 
   <!-- LOBBY: Code + Name + Beitreten -->
@@ -27,117 +28,187 @@
       <input id="gameCode" type="text" placeholder="Spiel-Code eingeben" />
       <button id="joinBtn">Spiel betreten</button>
     </div>
-
-    <div class="row">
+    <div class="row" style="margin-top:8px">
       <input id="playerName" type="text" placeholder="Dein Name (z. B. Anna)" />
     </div>
-    <div id="lobbyInfo" style="margin-top:6px; color:#444; font-size:14px;">Gib einen Spiel-Code und deinen Namen ein.</div>
+    <div id="lobbyInfo" style="margin-top:8px;color:#444">Gib Spiel-Code und deinen Namen ein.</div>
   </div>
 
-  <!-- GAME: Spielerstatus und Namen -->
+  <!-- GAME: Spielerstatus, Board und Controls -->
   <div id="game" class="card">
     <div id="status">Warte...</div>
     <div id="vs">- vs -</div>
-    <div style="margin-top:14px;">
+
+    <div id="board"></div>
+
+    <div style="margin-top:8px">
       <button id="leaveBtn" class="secondary">Spiel verlassen</button>
     </div>
   </div>
 
-  <!-- Firebase Realtime Database (compat) -->
+  <!-- Abhängigkeiten -->
+  <script src="https://unpkg.com/chessground@7.0.0/dist/chessground.min.js"></script>
+  <!-- chess.js (Browser-Bundle) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js"></script>
+  <!-- Firebase compat -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
   <script>
-    // ------------- Firebase-Konfiguration: hier eigene Werte eintragen -------------
+    // -----------------------
+    // Firebase-Konfiguration: hier eigene Werte eintragen
+    // -----------------------
     const firebaseConfig = {
         apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
         authDomain: "schach-online-25607.firebaseapp.com",
         databaseURL: "https://schach-online-25607-default-rtdb.europe-west1.firebasedatabase.app",
         projectId: "schach-online-25607"
     };
-    // -----------------------------------------------------------------------------
+
+    // -----------------------
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // UI-Elemente
+    // UI
     const lobbyEl = document.getElementById('lobby');
     const gameEl  = document.getElementById('game');
     const statusEl = document.getElementById('status');
     const vsEl = document.getElementById('vs');
+    const boardEl = document.getElementById('board');
     const gameCodeInput = document.getElementById('gameCode');
     const playerNameInput = document.getElementById('playerName');
     const joinBtn = document.getElementById('joinBtn');
     const leaveBtn = document.getElementById('leaveBtn');
-    const lobbyInfo = document.getElementById('lobbyInfo');
 
-    // Laufzeitvariablen
+    // State
     let myId = null;
-    let mySlot = null; // "player1" oder "player2"
+    let mySlot = null; // 'player1' oder 'player2'
+    let myColor = null; // 'white' oder 'black'
     let currentGameId = null;
     let playersRef = null;
+    let gameRef = null; // root for game data
+    let cg = null;      // chessground instance
+    let chess = null;   // chess.js instance
     let listenersAttached = false;
-
-    // Zeige Lobby beim Laden
+    
+    // Zeige Lobby
     lobbyEl.style.display = 'block';
 
-    // Hilfsfunktion: UI aktualisieren basierend auf players-Objekt
-    function updateGameUI(players) {
+    // Hilfsfunktion: UI aktualisieren
+    function updateGameUI(players, fen) {
       const p1 = players && players.player1 ? players.player1.name : null;
       const p2 = players && players.player2 ? players.player2.name : null;
-      // vs Text
       vsEl.innerText = `${p1 || '-'}  vs  ${p2 || '-'}`;
 
-      // Statusanzeige: "spieler x/2" — wenn beide vorhanden: "ready"
-      const count = (p1 ? 1 : 0) + (p2 ? 1 : 0);
+      const count = (p1 ? 1:0) + (p2?1:0);
       if (mySlot) {
-        // Wenn ich in game bin, zeige z.B. "Spieler 1/2" oder "Spieler 2/2 ready"
         const slotNumber = mySlot === 'player1' ? '1/2' : '2/2';
-        if (count >= 2) {
-          statusEl.innerText = `${slotNumber} ready`;
-        } else {
-          statusEl.innerText = `${slotNumber} — warte auf zweiten Spieler...`;
-        }
+        if (count >= 2) statusEl.innerText = `${slotNumber} ready`;
+        else statusEl.innerText = `${slotNumber} — warte auf zweiten Spieler...`;
       } else {
-        // Beobachter / fallback
-        if (count >= 2) {
-          statusEl.innerText = `2/2 ready`;
-        } else {
-          statusEl.innerText = `${count}/2 — warte auf Spieler`;
+        statusEl.innerText = `${count}/2`;
+      }
+
+      // falls fen gegeben und cg vorhanden: lade position
+      if (fen && cg) {
+        // update local chess and board only if fen differs
+        if (chess.fen() !== fen) {
+          chess.load(fen);
+          cg.set({fen: fen});
         }
       }
     }
 
-    // Listener an playersRef anhängen
-    function attachPlayersListener() {
-      if (!playersRef || listenersAttached) return;
+    // Listener anhängen
+    function attachListeners() {
+      if (!gameRef || listenersAttached) return;
       listenersAttached = true;
-      playersRef.on('value', snapshot => {
-        const val = snapshot.val() || {};
-        updateGameUI(val);
+
+      // Spielerliste
+      playersRef.on('value', snap => {
+        const players = snap.val() || {};
+        // falls players existieren, update UI
+        gameRef.child('fen').once('value').then(s => {
+          const fen = s.val() || null;
+          updateGameUI(players, fen);
+        });
+      });
+
+      // Spielzustand (FEN) — remote moves empfangen
+      gameRef.child('fen').on('value', snap => {
+        const fen = snap.val();
+        if (!fen) return;
+        // lade nur wenn sich FEN unterscheidet (vermeidet echo)
+        if (chess.fen() !== fen) {
+          chess.load(fen);
+          cg.set({fen: fen});
+        }
       });
     }
 
-    // Beitreten-Funktion
-    joinBtn.addEventListener('click', async () => {
-      const gameId = String(gameCodeInput.value || '').trim();
-      const name = String(playerNameInput.value || '').trim() || 'Spieler';
+    // Initialisiere Chess & Chessground
+    function initLocalBoard(initialFen) {
+      chess = new Chess();
+      if (initialFen) chess.load(initialFen);
 
-      if (!gameId) {
-        alert('Bitte einen Spiel-Code eingeben.');
-        return;
-      }
-      // Einmal setzen
+      // chessground setup
+      cg = Chessground(boardEl, {
+        fen: chess.fen(),
+        orientation: myColor || 'white',
+        movable: {
+          color: myColor || 'white',
+          free: false,
+          // after wird aufgerufen nachdem UI versucht hat zu ziehen
+          events: {
+            after: (orig, dest) => {
+              // nur erlauben, wenn es wirklich der Zug des Spielers ist
+              const turn = chess.turn() === 'w' ? 'white' : 'black';
+              if (turn !== myColor) {
+                // nicht dran — revert (server bringt die richtige Stellung)
+                gameRef.child('fen').once('value').then(s => {
+                  const fen = s.val();
+                  if (fen) {
+                    chess.load(fen);
+                    cg.set({fen: fen});
+                  }
+                });
+                return;
+              }
+
+              // versuche Zug in chess.js
+              const move = chess.move({from: orig, to: dest, promotion: 'q'});
+              if (!move) {
+                // ungültig -> lade letzte Stellung neu
+                cg.set({fen: chess.fen()});
+                return;
+              }
+
+              // gültig: schreibe neue FEN in DB (dies löst remote update beim anderen Client aus)
+              const newFen = chess.fen();
+              gameRef.child('fen').set(newFen);
+            }
+          }
+        },
+        animation: {enabled: true}
+      });
+    }
+
+    // Beitreten
+    joinBtn.addEventListener('click', () => {
+      const gameId = String(gameCodeInput.value||'').trim();
+      const name = String(playerNameInput.value||'').trim() || 'Spieler';
+      if (!gameId) { alert('Bitte Spiel-Code eingeben.'); return; }
+
       myId = Math.random().toString(36).substring(2,9);
       currentGameId = gameId;
       playersRef = db.ref('games/' + currentGameId + '/players');
+      gameRef = db.ref('games/' + currentGameId);
 
-      // Versuche per Transaction einen freien Slot zu belegen
+      // Transaction um Slot zu belegen bzw. Namen zu aktualisieren
       playersRef.transaction(current => {
         if (current === null) {
-          // kein Spiel: erstelle mit player1
           return { player1: { id: myId, name: name } };
         } else {
-          // falls bereits belegt, prüfe Slots
           if (!current.player1) {
             current.player1 = { id: myId, name: name };
             return current;
@@ -145,91 +216,72 @@
             current.player2 = { id: myId, name: name };
             return current;
           } else if (current.player1 && current.player1.id === myId) {
-            // bereits eingetragen als player1 (z. B. reload)
-            current.player1.name = name; // Name updaten falls geändert
-            return current;
+            current.player1.name = name; return current;
           } else if (current.player2 && current.player2.id === myId) {
-            // bereits player2
-            current.player2.name = name;
-            return current;
+            current.player2.name = name; return current;
           } else {
-            // beide belegt, keine Änderung (abort)
+            // beide belegt
             return;
           }
         }
-      }, (error, committed, snapshot) => {
-        if (error) {
-          alert('Fehler beim Beitreten: ' + error.message);
-          return;
-        }
-        if (!committed) {
-          alert('Spiel ist bereits voll (2 Spieler).');
-          return;
-        }
-        // Transaction erfolgreich: ermittle eigenen Slot
-        const players = snapshot.val() || {};
-        if (players.player1 && players.player1.id === myId) {
-          mySlot = 'player1';
-        } else if (players.player2 && players.player2.id === myId) {
-          mySlot = 'player2';
-        } else {
-          // Sollte nicht vorkommen, aber handle
-          alert('Konnte keinen Slot zuweisen.');
-          return;
-        }
+      }, (err, committed, snapshot) => {
+        if (err) { alert('Fehler: ' + err.message); return; }
+        if (!committed) { alert('Spiel ist bereits voll.'); return; }
 
-        // Setze onDisconnect für den eigenen Slot, damit beim Schließen entfernt wird
+        const players = snapshot.val() || {};
+        if (players.player1 && players.player1.id === myId) mySlot = 'player1';
+        else if (players.player2 && players.player2.id === myId) mySlot = 'player2';
+        else { alert('Konnte keinen Slot zuweisen.'); return; }
+
+        myColor = mySlot === 'player1' ? 'white' : 'black';
+
+        // setze onDisconnect für eigenen Slot
         playersRef.child(mySlot).onDisconnect().remove();
 
-        // Wechsel zur Spielansicht und Listener anhängen
-        lobbyEl.style.display = 'none';
-        gameEl.style.display = 'block';
-        attachPlayersListener();
+        // Falls kein fen vorhanden -> initialisiere mit Startstellung
+        gameRef.child('fen').transaction(f => {
+          if (!f) {
+            const tempChess = new Chess();
+            return tempChess.fen();
+          }
+          return f; // keine Änderung
+        }).then(() => {
+          // UI wechseln
+          lobbyEl.style.display = 'none';
+          gameEl.style.display = 'block';
 
-        // Sofort UI mit aktueller Snapshot-Info updaten
-        updateGameUI(players);
+          // initialisiere Board lokal (liest fen aus DB kurz danach im listener)
+          initLocalBoard();
+
+          // listener anhängen
+          attachListeners();
+        });
       });
     });
 
-    // Verlassen-Button
+    // Verlassen
     leaveBtn.addEventListener('click', () => {
-      if (!playersRef || !mySlot) {
-        // zurück zur Lobby
-        resetLocalState();
-        return;
-      }
-      // entferne eigenen slot
-      playersRef.child(mySlot).remove().then(() => {
-        resetLocalState();
-      }).catch(err => {
-        console.error(err);
-        resetLocalState();
-      });
+      if (playersRef && mySlot) {
+        playersRef.child(mySlot).remove().then(() => resetLocalState());
+      } else resetLocalState();
     });
 
-    // Lokaler Reset und UI zurücksetzen
-    function resetLocalState() {
-      // Detach listener
-      if (playersRef) {
-        playersRef.off();
-      }
+    function resetLocalState(){
+      if (playersRef) playersRef.off();
+      if (gameRef) gameRef.child('fen').off();
       listenersAttached = false;
-      myId = null;
-      mySlot = null;
-      currentGameId = null;
-      playersRef = null;
-
-      // UI zurück
+      myId = null; mySlot = null; myColor = null; currentGameId = null; playersRef = null; gameRef = null;
+      if (cg) { cg.stop(); cg = null; }
+      chess = null;
       gameEl.style.display = 'none';
       lobbyEl.style.display = 'block';
       statusEl.innerText = 'Warte...';
       vsEl.innerText = '- vs -';
       gameCodeInput.value = '';
-      // Name bleibt (freundlich für erneutes Joinen)
     }
 
-    // Optional: wenn Nutzer die Seite neu lädt und bereits in einem Game war, bleibt das local state leer.
-    // Hinweis: Firebase-Konfig muss ausgefüllt werden, damit das Multiplayer-Verhalten funktioniert.
+    // Hinweis: Firebase DB Sicherheitsregeln müssen während Entwicklung offen sein (oder korrekt konfiguriert)
+    // sonst schlagen Lese/Schreib-Operationen fehl.
   </script>
 </body>
 </html>
