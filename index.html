@@ -1,98 +1,235 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>Test Multiplayer Schach</title>
-
-<!-- Chessground CSS -->
-<link rel="stylesheet" href="https://unpkg.com/chessground@7.0.0/dist/chessground.min.css">
-
-<style>
-body { font-family: Arial, sans-serif; text-align: center; margin-top: 30px; }
-#board { width: 400px; height: 400px; margin: 20px auto; }
-input { padding: 5px; font-size: 14px; width: 150px; }
-button { padding: 5px 10px; font-size: 14px; margin-left: 5px; }
-#status { margin-top: 20px; font-weight: bold; color: green; }
-</style>
+  <meta charset="utf-8" />
+  <title>Online Schach</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; max-width:720px; margin:40px auto; text-align:center; }
+    h1 { margin-bottom:10px; }
+    .card { border:1px solid #ddd; padding:20px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.03); }
+    .row { margin:12px 0; display:flex; justify-content:center; gap:8px; align-items:center; flex-wrap:wrap; }
+    input[type="text"]{ padding:8px 10px; font-size:16px; width:220px; border:1px solid #ccc; border-radius:4px; }
+    button { padding:9px 14px; font-size:16px; border-radius:6px; border:0; cursor:pointer; background:#0b67ff; color:#fff; }
+    button.secondary { background:#6c757d; }
+    #status { margin-top:10px; font-weight:600; }
+    #vs { margin-top:10px; font-size:18px; font-weight:600; }
+    #lobby, #game { display:none; }
+  </style>
 </head>
 <body>
 
-<h1>Test Multiplayer Schach</h1>
+  <h1>Online Schach</h1>
 
-<div id="board"></div>
+  <!-- LOBBY: Code + Name + Beitreten -->
+  <div id="lobby" class="card">
+    <div class="row">
+      <input id="gameCode" type="text" placeholder="Spiel-Code eingeben" />
+      <button id="joinBtn">Spiel betreten</button>
+    </div>
 
-<div>
-  <input id="gameId" placeholder="Spiel ID eingeben">
-  <button onclick="joinGame()">Spiel beitreten</button>
-</div>
+    <div class="row">
+      <input id="playerName" type="text" placeholder="Dein Name (z. B. Anna)" />
+    </div>
+    <div id="lobbyInfo" style="margin-top:6px; color:#444; font-size:14px;">Gib einen Spiel-Code und deinen Namen ein.</div>
+  </div>
 
-<div id="status"></div>
+  <!-- GAME: Spielerstatus und Namen -->
+  <div id="game" class="card">
+    <div id="status">Warte...</div>
+    <div id="vs">- vs -</div>
+    <div style="margin-top:14px;">
+      <button id="leaveBtn" class="secondary">Spiel verlassen</button>
+    </div>
+  </div>
 
-<!-- Bibliotheken -->
-<script src="https://unpkg.com/chessground@7.0.0/dist/chessground.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+  <!-- Firebase Realtime Database (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
-<script>
-// ----------------------------
-// Firebase Config einfügen
-// ----------------------------
-const firebaseConfig = {
-  apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
-  authDomain: "schach-online-25607.firebaseapp.com",
-  databaseURL: "https://schach-online-25607-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "schach-online-25607"
-};
+  <script>
+    // ------------- Firebase-Konfiguration: hier eigene Werte eintragen -------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyAFICoiUOuH7csjX1kyI1OqGtM6GS8vfBU",
+        authDomain: "schach-online-25607.firebaseapp.com",
+        databaseURL: "https://schach-online-25607-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "schach-online-25607"
+    };
+    // -----------------------------------------------------------------------------
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
+    // UI-Elemente
+    const lobbyEl = document.getElementById('lobby');
+    const gameEl  = document.getElementById('game');
+    const statusEl = document.getElementById('status');
+    const vsEl = document.getElementById('vs');
+    const gameCodeInput = document.getElementById('gameCode');
+    const playerNameInput = document.getElementById('playerName');
+    const joinBtn = document.getElementById('joinBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
+    const lobbyInfo = document.getElementById('lobbyInfo');
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+    // Laufzeitvariablen
+    let myId = null;
+    let mySlot = null; // "player1" oder "player2"
+    let currentGameId = null;
+    let playersRef = null;
+    let listenersAttached = false;
 
-// ----------------------------
-// Globale Variablen
-// ----------------------------
-let board;
-let currentGame = "";
+    // Zeige Lobby beim Laden
+    lobbyEl.style.display = 'block';
 
-// ----------------------------
-// Chessground Brett initialisieren
-// ----------------------------
-board = Chessground(document.getElementById("board"), {
-  draggable: false,
-  orientation: 'white'
-});
+    // Hilfsfunktion: UI aktualisieren basierend auf players-Objekt
+    function updateGameUI(players) {
+      const p1 = players && players.player1 ? players.player1.name : null;
+      const p2 = players && players.player2 ? players.player2.name : null;
+      // vs Text
+      vsEl.innerText = `${p1 || '-'}  vs  ${p2 || '-'}`;
 
-// ----------------------------
-// Spiel beitreten / erstellen
-// ----------------------------
-function joinGame() {
-  let input = document.getElementById("gameId").value.trim();
-  if(!input) {
-    alert("Bitte eine Spiel-ID eingeben!");
-    return;
-  }
-  currentGame = input;
-
-  const playersRef = db.ref("games/" + currentGame + "/players");
-  const myId = Math.random().toString(36).substring(2,8);
-
-  // Eigenen Spieler registrieren
-  playersRef.child(myId).set(true);
-
-  // Wenn Spieler die Seite verlassen, entfernen
-  playersRef.child(myId).onDisconnect().remove();
-
-  // Auf Veränderungen hören
-  playersRef.on('value', snapshot => {
-    const count = snapshot.numChildren();
-    if(count >= 2) {
-      document.getElementById("status").innerText = "Beide Spieler bereit!";
-    } else {
-      document.getElementById("status").innerText = "Warte auf zweiten Spieler...";
+      // Statusanzeige: "spieler x/2" — wenn beide vorhanden: "ready"
+      const count = (p1 ? 1 : 0) + (p2 ? 1 : 0);
+      if (mySlot) {
+        // Wenn ich in game bin, zeige z.B. "Spieler 1/2" oder "Spieler 2/2 ready"
+        const slotNumber = mySlot === 'player1' ? '1/2' : '2/2';
+        if (count >= 2) {
+          statusEl.innerText = `${slotNumber} ready`;
+        } else {
+          statusEl.innerText = `${slotNumber} — warte auf zweiten Spieler...`;
+        }
+      } else {
+        // Beobachter / fallback
+        if (count >= 2) {
+          statusEl.innerText = `2/2 ready`;
+        } else {
+          statusEl.innerText = `${count}/2 — warte auf Spieler`;
+        }
+      }
     }
-  });
-}
-</script>
 
+    // Listener an playersRef anhängen
+    function attachPlayersListener() {
+      if (!playersRef || listenersAttached) return;
+      listenersAttached = true;
+      playersRef.on('value', snapshot => {
+        const val = snapshot.val() || {};
+        updateGameUI(val);
+      });
+    }
+
+    // Beitreten-Funktion
+    joinBtn.addEventListener('click', async () => {
+      const gameId = String(gameCodeInput.value || '').trim();
+      const name = String(playerNameInput.value || '').trim() || 'Spieler';
+
+      if (!gameId) {
+        alert('Bitte einen Spiel-Code eingeben.');
+        return;
+      }
+      // Einmal setzen
+      myId = Math.random().toString(36).substring(2,9);
+      currentGameId = gameId;
+      playersRef = db.ref('games/' + currentGameId + '/players');
+
+      // Versuche per Transaction einen freien Slot zu belegen
+      playersRef.transaction(current => {
+        if (current === null) {
+          // kein Spiel: erstelle mit player1
+          return { player1: { id: myId, name: name } };
+        } else {
+          // falls bereits belegt, prüfe Slots
+          if (!current.player1) {
+            current.player1 = { id: myId, name: name };
+            return current;
+          } else if (!current.player2 && current.player1.id !== myId) {
+            current.player2 = { id: myId, name: name };
+            return current;
+          } else if (current.player1 && current.player1.id === myId) {
+            // bereits eingetragen als player1 (z. B. reload)
+            current.player1.name = name; // Name updaten falls geändert
+            return current;
+          } else if (current.player2 && current.player2.id === myId) {
+            // bereits player2
+            current.player2.name = name;
+            return current;
+          } else {
+            // beide belegt, keine Änderung (abort)
+            return;
+          }
+        }
+      }, (error, committed, snapshot) => {
+        if (error) {
+          alert('Fehler beim Beitreten: ' + error.message);
+          return;
+        }
+        if (!committed) {
+          alert('Spiel ist bereits voll (2 Spieler).');
+          return;
+        }
+        // Transaction erfolgreich: ermittle eigenen Slot
+        const players = snapshot.val() || {};
+        if (players.player1 && players.player1.id === myId) {
+          mySlot = 'player1';
+        } else if (players.player2 && players.player2.id === myId) {
+          mySlot = 'player2';
+        } else {
+          // Sollte nicht vorkommen, aber handle
+          alert('Konnte keinen Slot zuweisen.');
+          return;
+        }
+
+        // Setze onDisconnect für den eigenen Slot, damit beim Schließen entfernt wird
+        playersRef.child(mySlot).onDisconnect().remove();
+
+        // Wechsel zur Spielansicht und Listener anhängen
+        lobbyEl.style.display = 'none';
+        gameEl.style.display = 'block';
+        attachPlayersListener();
+
+        // Sofort UI mit aktueller Snapshot-Info updaten
+        updateGameUI(players);
+      });
+    });
+
+    // Verlassen-Button
+    leaveBtn.addEventListener('click', () => {
+      if (!playersRef || !mySlot) {
+        // zurück zur Lobby
+        resetLocalState();
+        return;
+      }
+      // entferne eigenen slot
+      playersRef.child(mySlot).remove().then(() => {
+        resetLocalState();
+      }).catch(err => {
+        console.error(err);
+        resetLocalState();
+      });
+    });
+
+    // Lokaler Reset und UI zurücksetzen
+    function resetLocalState() {
+      // Detach listener
+      if (playersRef) {
+        playersRef.off();
+      }
+      listenersAttached = false;
+      myId = null;
+      mySlot = null;
+      currentGameId = null;
+      playersRef = null;
+
+      // UI zurück
+      gameEl.style.display = 'none';
+      lobbyEl.style.display = 'block';
+      statusEl.innerText = 'Warte...';
+      vsEl.innerText = '- vs -';
+      gameCodeInput.value = '';
+      // Name bleibt (freundlich für erneutes Joinen)
+    }
+
+    // Optional: wenn Nutzer die Seite neu lädt und bereits in einem Game war, bleibt das local state leer.
+    // Hinweis: Firebase-Konfig muss ausgefüllt werden, damit das Multiplayer-Verhalten funktioniert.
+  </script>
 </body>
 </html>
